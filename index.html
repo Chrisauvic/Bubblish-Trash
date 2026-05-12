@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bubblish Trash</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="game-shell">
+      <div id="game-wrap">
+        <div id="game"></div>
+        <button id="harvester" type="button" disabled>收割机 100</button>
+      </div>
+    </main>
+    <div id="boot-error" hidden>
+      Phaser 没有加载成功。请用 <code>node server.mjs</code> 启动后访问
+      <code>http://127.0.0.1:4173/</code>。
+    </div>
+    <script src="vendor/phaser.min.js"></script>
+    <script src="src/main.js"></script>
+  </body>
+</html>
