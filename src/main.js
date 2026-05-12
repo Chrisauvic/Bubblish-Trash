@@ -105,6 +105,7 @@ class BubblishTrash extends Phaser.Scene {
     this.gameOver = false;
     this.isHarvesting = false;
     this.started = false;
+    this.collapseUntil = 0;
     this.nextType = Phaser.Math.Between(0, TYPES.length - 1);
     this.audio = new GoofyAudio();
   }
@@ -118,6 +119,7 @@ class BubblishTrash extends Phaser.Scene {
   create() {
     this.matter.world.setBounds(18, 0, GAME_W - 36, GAME_H - 22, 48, true, true, false, true);
     this.matter.world.engine.gravity.y = 0.92;
+    this.matter.world.engine.enableSleeping = true;
 
     this.add.image(GAME_W / 2, GAME_H / 2, "background").setDisplaySize(GAME_W + 170, GAME_H).setDepth(-5);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0.18).setDepth(-4);
@@ -167,16 +169,22 @@ class BubblishTrash extends Phaser.Scene {
         const a = pair.bodyA.gameObject;
         const b = pair.bodyB.gameObject;
         if (a?.isClearing || b?.isClearing) continue;
-        if (a?.trashType !== undefined && b?.trashType !== undefined) this.audio.bump();
+        const impact = Math.abs(pair.collision.depth || 0);
+        const fastEnough = (Math.abs(a?.body?.velocity?.x || 0) + Math.abs(a?.body?.velocity?.y || 0) +
+          Math.abs(b?.body?.velocity?.x || 0) + Math.abs(b?.body?.velocity?.y || 0)) > 2.2;
+        if (a?.trashType !== undefined && b?.trashType !== undefined && fastEnough) this.audio.bump();
         if (a?.trashType !== undefined && a.trashType === b?.trashType) {
           this.queueClusterCheck();
-          this.pulse(a);
-          this.pulse(b);
+          if (fastEnough && impact > 0.8) {
+            this.pulse(a);
+            this.pulse(b);
+          }
         }
       }
     });
 
     this.time.addEvent({ delay: 500, loop: true, callback: () => this.checkDanger() });
+    this.time.addEvent({ delay: 260, loop: true, callback: () => this.settleSlowBubbles() });
     this.harvester = document.getElementById("harvester");
     this.harvester.addEventListener("click", () => this.useHarvester());
     this.updateHarvester();
@@ -329,17 +337,19 @@ class BubblishTrash extends Phaser.Scene {
     const radius = Phaser.Math.Between(30, 48);
     const type = this.nextType;
     const bubble = this.matter.add.image(this.dropX, DROP_Y + 28, this.getBubbleTexture(type), null, {
-      restitution: 0.6,
-      friction: 0.018,
-      frictionAir: 0.006,
-      density: 0.0013,
+      restitution: 0.48,
+      friction: 0.045,
+      frictionStatic: 0.1,
+      frictionAir: 0.014,
+      density: 0.0016,
       label: TYPES[type],
+      sleepThreshold: 45,
     });
     bubble.setDisplaySize(radius * 2, radius * 2);
     bubble.setData("baseScale", bubble.scaleX);
     bubble.setCircle(radius);
-    bubble.setBounce(0.6);
-    bubble.setFriction(0.018, 0.006, 0.04);
+    bubble.setBounce(0.48);
+    bubble.setFriction(0.045, 0.014, 0.1);
     bubble.setData("radius", radius);
     bubble.trashType = type;
     bubble.spawnedAt = this.time.now;
@@ -376,6 +386,20 @@ class BubblishTrash extends Phaser.Scene {
     });
   }
 
+  settleSlowBubbles() {
+    if (!this.started || this.gameOver || this.isHarvesting) return;
+    this.bubbles.forEach((bubble) => {
+      if (!bubble.active || bubble.isClearing || !bubble.body) return;
+      if (bubble.y < GAME_H * 0.55) return;
+      const speed = Math.hypot(bubble.body.velocity.x, bubble.body.velocity.y);
+      if (speed < 0.08) {
+        bubble.setVelocity(0, 0);
+        bubble.setAngularVelocity(0);
+        if (this.matter?.body?.setSleeping) this.matter.body.setSleeping(bubble.body, true);
+      }
+    });
+  }
+
   findClusters() {
     const list = [...this.bubbles].filter((b) => b.active && !b.isClearing);
     const seen = new Set();
@@ -406,12 +430,44 @@ class BubblishTrash extends Phaser.Scene {
   clearCluster(cluster) {
     this.audio.pop();
     this.cameras.main.shake(120, 0.004);
+    const center = {
+      x: Phaser.Math.Average(cluster.map((bubble) => bubble.x)),
+      y: Phaser.Math.Average(cluster.map((bubble) => bubble.y)),
+    };
     cluster.forEach((bubble, index) => {
       this.spawnCoin(bubble.x, bubble.y, index);
       this.spawnBurstGhost(bubble);
       this.queueBubbleDestroy(bubble);
     });
     this.addCoins(cluster.length * 10);
+    this.startCollapse(center);
+  }
+
+  startCollapse(center) {
+    this.collapseUntil = this.time.now + 520;
+    this.matter.world.engine.gravity.y = 1.28;
+    this.wakeLooseBubbles(center, true);
+    this.time.delayedCall(120, () => this.wakeLooseBubbles(center, true));
+    this.time.delayedCall(300, () => this.wakeLooseBubbles(center, false));
+    this.time.delayedCall(560, () => {
+      this.matter.world.engine.gravity.y = 0.92;
+    });
+  }
+
+  wakeLooseBubbles(center = null, strong = false) {
+    this.bubbles.forEach((bubble) => {
+      if (!bubble.active || bubble.isClearing || !bubble.body) return;
+      if (this.matter?.body?.setSleeping) this.matter.body.setSleeping(bubble.body, false);
+      const vx = bubble.body.velocity.x;
+      const vy = bubble.body.velocity.y;
+      const nearHole = center
+        ? Math.abs(bubble.x - center.x) < 150 && bubble.y < center.y + 95
+        : false;
+      const downward = strong && nearHole ? 1.9 : strong ? 1.15 : 0.72;
+      const nudgeX = nearHole ? Phaser.Math.Clamp((center.x - bubble.x) * 0.01, -0.9, 0.9) : 0;
+      bubble.setVelocity(vx + nudgeX, Math.max(vy, downward));
+      bubble.setAngularVelocity((bubble.body.angularVelocity || 0) + Phaser.Math.FloatBetween(-0.018, 0.018));
+    });
   }
 
   queueBubbleDestroy(bubble) {
@@ -537,10 +593,11 @@ class BubblishTrash extends Phaser.Scene {
       });
     });
     this.addCoins(victims.length * 4);
+    this.time.delayedCall(720, () => this.wakeLooseBubbles());
   }
 
   checkDanger() {
-    if (!this.started || this.gameOver || this.isHarvesting) return;
+    if (!this.started || this.gameOver || this.isHarvesting || this.time.now < this.collapseUntil) return;
     const danger = [...this.bubbles].some((bubble) => {
       if (!bubble.active || bubble.isClearing || this.time.now - bubble.spawnedAt < 1400) return false;
       return bubble.y - bubble.getData("radius") < DANGER_Y;
