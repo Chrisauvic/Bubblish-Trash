@@ -160,13 +160,7 @@ class BubblishTrash extends Phaser.Scene {
       .setVisible(false);
     this.createStartScreen();
 
-    this.input.on("pointermove", (pointer) => this.moveDropper(pointer));
-    this.input.on("pointerdown", (pointer) => {
-      if (!this.started) return;
-      this.audio.start();
-      this.moveDropper(pointer);
-      this.dropBubble();
-    });
+    this.bindCanvasInput();
 
     this.matter.world.on("collisionstart", (event) => {
       for (const pair of event.pairs) {
@@ -186,6 +180,39 @@ class BubblishTrash extends Phaser.Scene {
     this.harvester = document.getElementById("harvester");
     this.harvester.addEventListener("click", () => this.useHarvester());
     this.updateHarvester();
+  }
+
+  bindCanvasInput() {
+    const canvas = this.game.canvas;
+    const updateFromClientX = (clientX) => {
+      if (!this.started || this.gameOver || this.isHarvesting) return;
+      const bounds = canvas.getBoundingClientRect();
+      const localX = ((clientX - bounds.left) / bounds.width) * GAME_W;
+      this.setDropX(localX);
+    };
+    const dropFromClientX = (clientX) => {
+      if (!this.started || this.gameOver || this.isHarvesting) return;
+      updateFromClientX(clientX);
+      this.audio.start();
+      this.dropBubble();
+    };
+
+    canvas.style.touchAction = "none";
+    canvas.addEventListener("pointermove", (event) => updateFromClientX(event.clientX), { passive: true });
+    canvas.addEventListener("pointerup", (event) => {
+      event.preventDefault();
+      dropFromClientX(event.clientX);
+    });
+    canvas.addEventListener("click", (event) => {
+      event.preventDefault();
+      dropFromClientX(event.clientX);
+    });
+    canvas.addEventListener("touchend", (event) => {
+      const touch = event.changedTouches?.[0];
+      if (!touch) return;
+      event.preventDefault();
+      dropFromClientX(touch.clientX);
+    }, { passive: false });
   }
 
   createStartScreen() {
@@ -286,6 +313,10 @@ class BubblishTrash extends Phaser.Scene {
     if (!this.started || this.gameOver || this.isHarvesting) return;
     const bounds = this.game.canvas.getBoundingClientRect();
     const localX = ((pointer.event.clientX - bounds.left) / bounds.width) * GAME_W;
+    this.setDropX(localX);
+  }
+
+  setDropX(localX) {
     this.dropX = Phaser.Math.Clamp(localX, 54, GAME_W - 54);
     this.hook.setPosition(this.dropX, DROP_Y);
     this.preview.setPosition(this.dropX, DROP_Y + 42).setDisplaySize(84, 84);
