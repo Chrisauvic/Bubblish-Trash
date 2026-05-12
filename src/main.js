@@ -1,26 +1,26 @@
 const GAME_W = 540;
-const GAME_H = 820;
+const GAME_H = 960;
 const DROP_Y = 76;
 const DANGER_Y = 122;
 const TYPES = [
   "pizza",
-  "keys",
-  "chicken",
+  "sock",
+  "toast",
+  "bandage",
+  "shoe",
+  "fishbone",
+  "wire",
   "banana",
-  "burger",
-  "coffee",
-  "bag",
-  "car",
 ];
 const BUBBLE_ASSETS = [
   "bubble-01",
+  "bubble-02",
   "bubble-03",
   "bubble-04",
   "bubble-05",
   "bubble-06",
   "bubble-07",
-  "bubble-09",
-  "bubble-10",
+  "bubble-08",
 ];
 
 class GoofyAudio {
@@ -226,8 +226,8 @@ class BubblishTrash extends Phaser.Scene {
   createStartScreen() {
     this.startLayer = this.add.container(0, 0).setDepth(100);
     const scrim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xf4dfbd, 0.9);
-    const mouth = this.add.image(GAME_W / 2, 162, "harvester-mouth").setScale(0.34).setFlipY(true).setAlpha(0.96);
-    const titleShadow = this.add.text(GAME_W / 2 + 4, 310 + 5, "Bubblish\nTrash", {
+    const mouth = this.add.image(GAME_W / 2, 180, "harvester-mouth").setScale(0.36).setFlipY(true).setAlpha(0.96);
+    const titleShadow = this.add.text(GAME_W / 2 + 4, 355 + 5, "Bubblish\nTrash", {
       fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
       fontSize: "58px",
       lineSpacing: -10,
@@ -235,7 +235,7 @@ class BubblishTrash extends Phaser.Scene {
       fontStyle: "900",
       align: "center",
     }).setOrigin(0.5);
-    const title = this.add.text(GAME_W / 2, 310, "Bubblish\nTrash", {
+    const title = this.add.text(GAME_W / 2, 355, "Bubblish\nTrash", {
       fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
       fontSize: "58px",
       lineSpacing: -10,
@@ -245,7 +245,7 @@ class BubblishTrash extends Phaser.Scene {
       fontStyle: "900",
       align: "center",
     }).setOrigin(0.5);
-    const subtitle = this.add.text(GAME_W / 2, 412, "把怪怪泡泡丢进垃圾场，三颗同类就会爆金币", {
+    const subtitle = this.add.text(GAME_W / 2, 468, "把怪怪泡泡丢进垃圾场，三颗同类就会爆金币", {
       fontFamily: "Microsoft YaHei, sans-serif",
       fontSize: "18px",
       color: "#5f4a3a",
@@ -253,25 +253,25 @@ class BubblishTrash extends Phaser.Scene {
     }).setOrigin(0.5);
 
     const bubbles = [
-      [88, 244, 0, 56, -14],
-      [456, 270, 2, 62, 12],
-      [102, 510, 4, 66, 9],
-      [438, 510, 7, 58, -10],
-      [270, 535, 3, 70, 0],
+      [88, 600, 0, 82, -14],
+      [452, 604, 1, 82, 12],
+      [138, 704, 2, 76, 9],
+      [402, 706, 4, 76, -10],
+      [270, 664, 3, 74, 0],
     ].map(([x, y, type, size, angle]) =>
       this.add.image(x, y, this.getBubbleTexture(type)).setDisplaySize(size, size).setAngle(angle).setAlpha(0.95),
     );
 
-    const buttonBack = this.add.rectangle(GAME_W / 2, 650, 230, 62, 0xf7c94b, 1)
+    const buttonBack = this.add.rectangle(GAME_W / 2, 790, 230, 62, 0xf7c94b, 1)
       .setStrokeStyle(4, 0x2d2a28)
       .setInteractive({ useHandCursor: true });
-    const buttonText = this.add.text(GAME_W / 2, 650, "开始游戏", {
+    const buttonText = this.add.text(GAME_W / 2, 790, "开始游戏", {
       fontFamily: "Microsoft YaHei, sans-serif",
       fontSize: "28px",
       color: "#2d2a28",
       fontStyle: "900",
     }).setOrigin(0.5);
-    const hint = this.add.text(GAME_W / 2, 715, "点击开始后，移动顶部投放点并点击投放", {
+    const hint = this.add.text(GAME_W / 2, 860, "点击开始后，移动顶部投放点并点击投放", {
       fontFamily: "Microsoft YaHei, sans-serif",
       fontSize: "15px",
       color: "#7b6754",
