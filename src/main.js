@@ -36,7 +36,7 @@ class GoofyAudio {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.18;
+    this.master.gain.value = 0.24;
     this.master.connect(this.ctx.destination);
   }
 
@@ -86,10 +86,10 @@ class GoofyAudio {
   bump() {
     if (!this.ctx) return;
     const nowMs = performance.now();
-    if (nowMs - this.lastBumpAt < 55) return;
+    if (nowMs - this.lastBumpAt < 70) return;
     this.lastBumpAt = nowMs;
-    this.blip(230 + Math.random() * 90, 0.035, "sine", 0.045, -80);
-    this.blip(520 + Math.random() * 120, 0.025, "triangle", 0.025, 40);
+    this.sweep(560 + Math.random() * 170, 210 + Math.random() * 90, 0.095, "sine", 0.14);
+    window.setTimeout(() => this.blip(175 + Math.random() * 60, 0.07, "triangle", 0.075, -40), 30);
   }
 
   pop() {
@@ -138,7 +138,6 @@ class BubblishTrash extends Phaser.Scene {
     this.load.image("background", "assets/new/background.jpg");
     this.load.image("harvester-mouth", "assets/new/harvester-mouth.png");
     this.load.image("coin", "assets/new/coin.png");
-    this.load.audio("bgm", "assets/audio/upbeat-loop.ogg");
     BUBBLE_ASSETS.forEach((key) => this.load.image(key, `assets/new/${key}.png`));
   }
 
@@ -149,11 +148,17 @@ class BubblishTrash extends Phaser.Scene {
 
     this.add.image(GAME_W / 2, GAME_H / 2, "background").setDisplaySize(GAME_W + 170, GAME_H).setDepth(-5);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0.18).setDepth(-4);
-    this.add.rectangle(GAME_W / 2, DANGER_Y, GAME_W - 42, 4, 0xe34b4b).setDepth(20);
-    this.add.text(24, DANGER_Y - 30, "危险线", {
+    this.add.rectangle(GAME_W / 2, DANGER_Y, GAME_W - 48, 10, 0xff6b4a, 0.12).setDepth(19);
+    this.add.line(0, 0, 32, DANGER_Y, GAME_W - 32, DANGER_Y, 0xff4e62, 0.82)
+      .setOrigin(0, 0)
+      .setLineWidth(3, 3)
+      .setDepth(20);
+    this.add.text(24, DANGER_Y - 31, "警戒线", {
       fontFamily: "Microsoft YaHei, sans-serif",
-      fontSize: "16px",
-      color: "#b83333",
+      fontSize: "15px",
+      color: "#ff4e62",
+      stroke: "#ffffff",
+      strokeThickness: 3,
       fontStyle: "900",
     }).setDepth(20);
 
@@ -165,17 +170,20 @@ class BubblishTrash extends Phaser.Scene {
       stroke: "#2d2a28",
       strokeThickness: 3,
     }).setDepth(20);
-    this.add.text(GAME_W / 2, 24, "移动顶部投放点，点击/触摸丢垃圾泡泡", {
-      fontFamily: "Microsoft YaHei, sans-serif",
-      fontSize: "15px",
-      color: "#6d6257",
-    }).setOrigin(0.5, 0).setDepth(20);
-
-    this.dropLine = this.add.line(0, 0, this.dropX, 30, this.dropX, DROP_Y + 26, 0x2d2a28, 0.25)
+    this.dropLine = this.add.line(0, 0, this.dropX, 32, this.dropX, DROP_Y + 20, 0x15b7aa, 0.62)
       .setOrigin(0, 0)
+      .setLineWidth(2, 2)
       .setDepth(15);
-    this.hook = this.add.circle(this.dropX, DROP_Y, 14, 0xffffff, 1)
-      .setStrokeStyle(4, 0x2d2a28)
+    this.hook = this.add.circle(this.dropX, DROP_Y, 9, 0x15b7aa, 0.72)
+      .setStrokeStyle(2, 0xffffff, 0.82)
+      .setDepth(16);
+    this.clawLeft = this.add.line(0, 0, this.dropX - 8, DROP_Y + 6, this.dropX - 22, DROP_Y + 18, 0xf7c94b, 0.82)
+      .setOrigin(0, 0)
+      .setLineWidth(3, 3)
+      .setDepth(16);
+    this.clawRight = this.add.line(0, 0, this.dropX + 8, DROP_Y + 6, this.dropX + 22, DROP_Y + 18, 0xf7c94b, 0.82)
+      .setOrigin(0, 0)
+      .setLineWidth(3, 3)
       .setDepth(16);
     this.preview = this.add.image(this.dropX, DROP_Y + 42, this.getBubbleTexture(this.nextType))
       .setDisplaySize(84, 84)
@@ -196,9 +204,12 @@ class BubblishTrash extends Phaser.Scene {
         const b = pair.bodyB.gameObject;
         if (a?.isClearing || b?.isClearing) continue;
         const impact = Math.abs(pair.collision.depth || 0);
-        const fastEnough = (Math.abs(a?.body?.velocity?.x || 0) + Math.abs(a?.body?.velocity?.y || 0) +
-          Math.abs(b?.body?.velocity?.x || 0) + Math.abs(b?.body?.velocity?.y || 0)) > 2.2;
-        if (a?.trashType !== undefined && b?.trashType !== undefined && fastEnough) this.audio.bump();
+        const speedA = Math.hypot(a?.body?.velocity?.x || 0, a?.body?.velocity?.y || 0);
+        const speedB = Math.hypot(b?.body?.velocity?.x || 0, b?.body?.velocity?.y || 0);
+        const fastEnough = speedA + speedB > 2.2;
+        const bubbleTouch = a?.trashType !== undefined && b?.trashType !== undefined;
+        const landedBubbleTouch = bubbleTouch && (speedA > 0.65 || speedB > 0.65 || impact > 0.25);
+        if (landedBubbleTouch) this.audio.bump();
         if (a?.trashType !== undefined && a.trashType === b?.trashType) {
           this.queueClusterCheck();
           if (fastEnough && impact > 0.8) {
@@ -213,6 +224,7 @@ class BubblishTrash extends Phaser.Scene {
     this.time.addEvent({ delay: 260, loop: true, callback: () => this.settleSlowBubbles() });
     this.harvester = document.getElementById("harvester");
     this.harvester.addEventListener("click", () => this.useHarvester());
+    this.harvester.style.visibility = "hidden";
     this.updateHarvester();
   }
 
@@ -251,31 +263,46 @@ class BubblishTrash extends Phaser.Scene {
 
   createStartScreen() {
     this.startLayer = this.add.container(0, 0).setDepth(100);
-    const scrim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xf4dfbd, 0.9);
+    const scrim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xf4dfbd, 0.96);
     const mouth = this.add.image(GAME_W / 2, 180, "harvester-mouth").setScale(0.36).setFlipY(true).setAlpha(0.96);
-    const titleShadow = this.add.text(GAME_W / 2 + 4, 355 + 5, "Bubblish\nTrash", {
+    const titleShadow = this.add.text(GAME_W / 2 + 3, 348 + 4, "Bubblish", {
       fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
-      fontSize: "58px",
-      lineSpacing: -10,
-      color: "#7a4b23",
+      fontSize: "62px",
+      color: "#9b6c19",
       fontStyle: "900",
       align: "center",
     }).setOrigin(0.5);
-    const title = this.add.text(GAME_W / 2, 355, "Bubblish\nTrash", {
+    const title = this.add.text(GAME_W / 2, 348, "Bubblish", {
       fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
-      fontSize: "58px",
-      lineSpacing: -10,
-      color: "#15b7aa",
-      stroke: "#ffffff",
-      strokeThickness: 8,
+      fontSize: "62px",
+      color: "#ffffff",
+      stroke: "#15b7aa",
+      strokeThickness: 9,
       fontStyle: "900",
       align: "center",
     }).setOrigin(0.5);
-    const subtitle = this.add.text(GAME_W / 2, 468, "把怪怪泡泡丢进垃圾场，三颗同类就会爆金币", {
+    const trashShadow = this.add.text(GAME_W / 2 + 3, 414 + 4, "Trash", {
+      fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
+      fontSize: "44px",
+      color: "#9b6c19",
+      fontStyle: "900",
+    }).setOrigin(0.5);
+    const trashText = this.add.text(GAME_W / 2, 414, "Trash", {
+      fontFamily: "Arial Black, Microsoft YaHei, sans-serif",
+      fontSize: "44px",
+      color: "#ffffff",
+      stroke: "#15b7aa",
+      strokeThickness: 7,
+      fontStyle: "900",
+    }).setOrigin(0.5);
+    const subtitle = this.add.text(GAME_W / 2, 492, "把怪怪泡泡丢进垃圾场，三颗同类就会爆金币", {
       fontFamily: "Microsoft YaHei, sans-serif",
-      fontSize: "18px",
-      color: "#5f4a3a",
+      fontSize: "17px",
+      color: "#8f765e",
+      stroke: "#ffffff",
+      strokeThickness: 4,
       fontStyle: "900",
+      align: "center",
     }).setOrigin(0.5);
 
     const bubbles = [
@@ -288,22 +315,33 @@ class BubblishTrash extends Phaser.Scene {
       this.add.image(x, y, this.getBubbleTexture(type)).setDisplaySize(size, size).setAngle(angle).setAlpha(0.95),
     );
 
-    const buttonBack = this.add.rectangle(GAME_W / 2, 790, 230, 62, 0xf7c94b, 1)
-      .setStrokeStyle(4, 0x2d2a28)
+    const buttonShadow = this.add.rectangle(GAME_W / 2, 824, 246, 64, 0xa46e19, 0.42);
+    const buttonBack = this.add.rectangle(GAME_W / 2, 818, 246, 64, 0xf2bc3f, 0.96)
+      .setStrokeStyle(4, 0xffffff, 0.98)
       .setInteractive({ useHandCursor: true });
-    const buttonText = this.add.text(GAME_W / 2, 790, "开始游戏", {
+    const buttonShine = this.add.rectangle(GAME_W / 2, 800, 210, 14, 0xfff4bf, 0.42);
+    const buttonText = this.add.text(GAME_W / 2, 818, "开始游戏", {
       fontFamily: "Microsoft YaHei, sans-serif",
-      fontSize: "28px",
-      color: "#2d2a28",
+      fontSize: "29px",
+      color: "#ffffff",
+      stroke: "#b87312",
+      strokeThickness: 4,
       fontStyle: "900",
     }).setOrigin(0.5);
-    const hint = this.add.text(GAME_W / 2, 860, "点击开始后，移动顶部投放点并点击投放", {
-      fontFamily: "Microsoft YaHei, sans-serif",
-      fontSize: "15px",
-      color: "#7b6754",
-    }).setOrigin(0.5);
-
-    this.startLayer.add([scrim, mouth, titleShadow, title, subtitle, ...bubbles, buttonBack, buttonText, hint]);
+    this.startLayer.add([
+      scrim,
+      mouth,
+      titleShadow,
+      title,
+      trashShadow,
+      trashText,
+      subtitle,
+      ...bubbles,
+      buttonShadow,
+      buttonBack,
+      buttonShine,
+      buttonText,
+    ]);
     this.tweens.add({
       targets: bubbles,
       y: "+=10",
@@ -328,11 +366,8 @@ class BubblishTrash extends Phaser.Scene {
   startGame() {
     if (this.started) return;
     this.started = true;
+    if (this.harvester) this.harvester.style.visibility = "visible";
     this.audio.start();
-    if (!this.bgm) {
-      this.bgm = this.sound.add("bgm", { loop: true, volume: 0.42 });
-    }
-    if (!this.bgm.isPlaying) this.bgm.play();
     this.time.delayedCall(180, () => this.seedBottomPile());
     this.tweens.add({
       targets: this.startLayer,
@@ -358,8 +393,10 @@ class BubblishTrash extends Phaser.Scene {
   setDropX(localX) {
     this.dropX = Phaser.Math.Clamp(localX, 54, GAME_W - 54);
     this.hook.setPosition(this.dropX, DROP_Y);
+    this.clawLeft.setTo(this.dropX - 8, DROP_Y + 6, this.dropX - 22, DROP_Y + 18);
+    this.clawRight.setTo(this.dropX + 8, DROP_Y + 6, this.dropX + 22, DROP_Y + 18);
     this.preview.setPosition(this.dropX, DROP_Y + 42).setDisplaySize(84, 84);
-    this.dropLine.setTo(this.dropX, 30, this.dropX, DROP_Y + 26);
+    this.dropLine.setTo(this.dropX, 32, this.dropX, DROP_Y + 20);
   }
 
   makeBubble(x, y, type, radius, options = {}) {
