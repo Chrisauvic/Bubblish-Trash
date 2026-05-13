@@ -5,26 +5,13 @@ $root = Split-Path -Parent $PSScriptRoot
 $temp = "D:\wechat\document\WeChat Files\wxid_9fjf6yfhal7l21\FileStorage\Temp"
 $out = Join-Path $root "assets\new"
 $srcOut = Join-Path $out "source"
+$coinFile = "a9898a530c336b23ec1ad94adc44612.jpg"
 New-Item -ItemType Directory -Force -Path $out, $srcOut | Out-Null
-
-$bubbleFiles = @(
-  "a5ce835f50c5cedf09e0428dfd562ad.jpg",
-  "a30aeac8700a5d25d8cef7c44d48a54.jpg",
-  "dcbdce008c2550fe7b3af0642efb09f.jpg",
-  "b3598878532dd22c220c89c17e86d54.jpg",
-  "90938effe4d933a8d14cf3157c05f53.jpg",
-  "82a4ae247653d49decf4bd5007d7304.jpg",
-  "846fda18d09ed43b9b0f630d4efdc9c.jpg",
-  "b78a08e323fca69c12e8799a958f330.jpg"
-)
 
 function Is-BackgroundPixel([System.Drawing.Color]$c) {
   $max = [Math]::Max($c.R, [Math]::Max($c.G, $c.B))
   $min = [Math]::Min($c.R, [Math]::Min($c.G, $c.B))
-  $neutral = ($max - $min) -lt 42
-  $bright = $c.R -gt 216 -and $c.G -gt 216 -and $c.B -gt 216
-  $checker = $neutral -and $c.R -gt 175 -and $c.G -gt 175 -and $c.B -gt 175
-  return $bright -or $checker
+  return ($max - $min) -lt 42 -and $c.R -gt 170 -and $c.G -gt 170 -and $c.B -gt 170
 }
 
 function Find-ContentBounds([System.Drawing.Bitmap]$img) {
@@ -54,11 +41,11 @@ function Find-ContentBounds([System.Drawing.Bitmap]$img) {
   return [System.Drawing.Rectangle]::new($minX, $minY, $maxX - $minX, $maxY - $minY)
 }
 
-function Save-CircleBubble($inputPath, $outputPath) {
+function Save-CircleAsset($inputPath, $outputPath) {
   $src = [System.Drawing.Bitmap]::FromFile($inputPath)
   try {
     $bounds = Find-ContentBounds $src
-    $size = [Math]::Ceiling([Math]::Max($bounds.Width, $bounds.Height) * 1.0)
+    $size = [Math]::Ceiling([Math]::Max($bounds.Width, $bounds.Height) * 1.04)
     $cx = $bounds.X + $bounds.Width / 2
     $cy = $bounds.Y + $bounds.Height / 2
     $cropX = [Math]::Max(0, [Math]::Floor($cx - $size / 2))
@@ -67,7 +54,7 @@ function Save-CircleBubble($inputPath, $outputPath) {
     if ($cropY + $size -gt $src.Height) { $cropY = [Math]::Max(0, $src.Height - $size) }
     $crop = [System.Drawing.Rectangle]::new([int]$cropX, [int]$cropY, [int][Math]::Min($size, $src.Width), [int][Math]::Min($size, $src.Height))
 
-    $dstSize = 1024
+    $dstSize = 768
     $dst = [System.Drawing.Bitmap]::new($dstSize, $dstSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     try {
       $g = [System.Drawing.Graphics]::FromImage($dst)
@@ -77,32 +64,12 @@ function Save-CircleBubble($inputPath, $outputPath) {
       $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
       $g.Clear([System.Drawing.Color]::Transparent)
       $clip = [System.Drawing.Drawing2D.GraphicsPath]::new()
-      $clip.AddEllipse(8, 8, $dstSize - 16, $dstSize - 16)
+      $clip.AddEllipse(7, 7, $dstSize - 14, $dstSize - 14)
       $g.SetClip($clip)
       $g.DrawImage($src, [System.Drawing.Rectangle]::new(0, 0, $dstSize, $dstSize), $crop, [System.Drawing.GraphicsUnit]::Pixel)
       $g.ResetClip()
       $g.Dispose()
       $clip.Dispose()
-
-      $center = ($dstSize - 1) / 2
-      $radius = ($dstSize / 2) - 7
-      $feather = 9.0
-      for ($y = 0; $y -lt $dstSize; $y++) {
-        for ($x = 0; $x -lt $dstSize; $x++) {
-          $p = $dst.GetPixel($x, $y)
-          if ($p.A -eq 0) { continue }
-          $dx = $x - $center
-          $dy = $y - $center
-          $dist = [Math]::Sqrt($dx * $dx + $dy * $dy)
-          if ($dist -gt $radius) {
-            $dst.SetPixel($x, $y, [System.Drawing.Color]::Transparent)
-          } elseif ($dist -gt ($radius - $feather)) {
-            $edgeAlpha = ($radius - $dist) / $feather
-            $alpha = [int]([Math]::Max(0, [Math]::Min(255, $p.A * $edgeAlpha)))
-            $dst.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($alpha, $p.R, $p.G, $p.B))
-          }
-        }
-      }
       $dst.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {
       if ($dst) { $dst.Dispose() }
@@ -112,13 +79,10 @@ function Save-CircleBubble($inputPath, $outputPath) {
   }
 }
 
-for ($i = 0; $i -lt $bubbleFiles.Count; $i++) {
-  $input = Join-Path $temp $bubbleFiles[$i]
-  if (-not (Test-Path -LiteralPath $input)) {
-    throw "Missing image: $input"
-  }
-  Copy-Item -LiteralPath $input -Destination (Join-Path $srcOut $bubbleFiles[$i]) -Force
-  Save-CircleBubble $input (Join-Path $out ("bubble-{0:D2}.png" -f ($i + 1)))
+$input = Join-Path $temp $coinFile
+if (-not (Test-Path -LiteralPath $input)) {
+  throw "Missing image: $input"
 }
-
-Write-Output "Processed latest bubble assets into $out"
+Copy-Item -LiteralPath $input -Destination (Join-Path $srcOut $coinFile) -Force
+Save-CircleAsset $input (Join-Path $out "coin.png")
+Write-Output "Processed coin asset into $out"

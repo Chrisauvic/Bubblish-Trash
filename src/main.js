@@ -93,6 +93,13 @@ class GoofyAudio {
     this.blip(880, 0.05, "square", 0.07);
     window.setTimeout(() => this.blip(1175, 0.08, "square", 0.06), 45);
   }
+
+  harvestBurst() {
+    this.start();
+    this.blip(170, 0.045, "sawtooth", 0.07, -120);
+    this.blip(760, 0.05, "square", 0.055, 140);
+    window.setTimeout(() => this.blip(1260, 0.06, "triangle", 0.055, 260), 35);
+  }
 }
 
 class BubblishTrash extends Phaser.Scene {
@@ -113,13 +120,14 @@ class BubblishTrash extends Phaser.Scene {
   preload() {
     this.load.image("background", "assets/new/background.jpg");
     this.load.image("harvester-mouth", "assets/new/harvester-mouth.png");
+    this.load.image("coin", "assets/new/coin.png");
     BUBBLE_ASSETS.forEach((key) => this.load.image(key, `assets/new/${key}.png`));
   }
 
   create() {
     this.matter.world.setBounds(18, 0, GAME_W - 36, GAME_H - 22, 48, true, true, false, true);
     this.matter.world.engine.gravity.y = 0.92;
-    this.matter.world.engine.enableSleeping = true;
+    this.matter.world.engine.enableSleeping = false;
 
     this.add.image(GAME_W / 2, GAME_H / 2, "background").setDisplaySize(GAME_W + 170, GAME_H).setDepth(-5);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0.18).setDepth(-4);
@@ -343,7 +351,6 @@ class BubblishTrash extends Phaser.Scene {
       frictionAir: 0.014,
       density: 0.0016,
       label: TYPES[type],
-      sleepThreshold: 45,
     });
     bubble.setDisplaySize(radius * 2, radius * 2);
     bubble.setData("baseScale", bubble.scaleX);
@@ -393,9 +400,8 @@ class BubblishTrash extends Phaser.Scene {
       if (bubble.y < GAME_H * 0.55) return;
       const speed = Math.hypot(bubble.body.velocity.x, bubble.body.velocity.y);
       if (speed < 0.08) {
-        bubble.setVelocity(0, 0);
-        bubble.setAngularVelocity(0);
-        if (this.matter?.body?.setSleeping) this.matter.body.setSleeping(bubble.body, true);
+        bubble.setVelocity(bubble.body.velocity.x * 0.5, Math.max(bubble.body.velocity.y, 0.03));
+        bubble.setAngularVelocity((bubble.body.angularVelocity || 0) * 0.45);
       }
     });
   }
@@ -471,7 +477,7 @@ class BubblishTrash extends Phaser.Scene {
   }
 
   queueBubbleDestroy(bubble) {
-    if (!bubble?.active || bubble.isClearing) return;
+    if (!bubble?.active) return;
     this.bubbles.delete(bubble);
     bubble.isClearing = true;
     bubble.setVisible(false);
@@ -501,19 +507,106 @@ class BubblishTrash extends Phaser.Scene {
   }
 
   spawnCoin(x, y, delay) {
-    const coin = this.add.circle(x, y, 8, 0xf7c94b, 1).setStrokeStyle(2, 0x9b6c19).setDepth(30);
+    const coin = this.add.image(x, y, "coin")
+      .setDepth(45)
+      .setDisplaySize(34, 34)
+      .setAngle(Phaser.Math.Between(-18, 18));
+    const coinScale = coin.scaleX;
+    const hopX = x + Phaser.Math.Between(-34, 34);
+    const hopY = y - Phaser.Math.Between(58, 92);
     this.tweens.add({
       targets: coin,
-      x: 92,
-      y: 36,
-      scale: 0.35,
-      alpha: 0.2,
       delay: delay * 35,
-      duration: 470,
-      ease: "Cubic.easeInOut",
-      onComplete: () => coin.destroy(),
+      x: hopX,
+      y: hopY,
+      scaleX: coinScale * 1.35,
+      scaleY: coinScale * 1.35,
+      angle: coin.angle + Phaser.Math.Between(120, 220),
+      duration: 180,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        this.tweens.add({
+          targets: coin,
+          x: 92,
+          y: 36,
+          scaleX: coinScale * 0.42,
+          scaleY: coinScale * 0.42,
+          alpha: 0.18,
+          angle: coin.angle + Phaser.Math.Between(260, 420),
+          duration: 540,
+          ease: "Cubic.easeInOut",
+          onComplete: () => coin.destroy(),
+        });
+      },
     });
     this.time.delayedCall(delay * 35, () => this.audio.coin());
+  }
+
+  spawnHarvesterBurst(x, y, textureKey) {
+    this.audio.harvestBurst();
+    this.cameras.main.shake(90, 0.004);
+    this.tweens.add({
+      targets: this.harvesterMouth,
+      scale: 0.68,
+      duration: 70,
+      yoyo: true,
+      ease: "Sine.easeOut",
+    });
+    for (let i = 0; i < 6; i++) {
+      const angle = Phaser.Math.FloatBetween(-Math.PI, 0);
+      const distance = Phaser.Math.Between(42, 92);
+      const shard = i < 2
+        ? this.add.image(x, y, textureKey).setDisplaySize(18, 18)
+        : this.add.circle(x, y, Phaser.Math.Between(4, 8), Phaser.Math.RND.pick([0xf7c94b, 0xffffff, 0x15b7aa, 0xff6b4a]), 0.95);
+      shard.setDepth(72).setAlpha(0.95);
+      const shardScaleX = shard.scaleX;
+      const shardScaleY = shard.scaleY;
+      this.tweens.add({
+        targets: shard,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance + Phaser.Math.Between(-8, 18),
+        scaleX: shardScaleX * 0.15,
+        scaleY: shardScaleY * 0.15,
+        alpha: 0,
+        angle: Phaser.Math.Between(-240, 240),
+        duration: Phaser.Math.Between(260, 420),
+        ease: "Cubic.easeOut",
+        onComplete: () => shard.destroy(),
+      });
+    }
+    const ring = this.add.circle(x, y, 16, 0xffffff, 0)
+      .setStrokeStyle(4, 0xf7c94b, 0.9)
+      .setDepth(71);
+    this.tweens.add({
+      targets: ring,
+      scale: 2.2,
+      alpha: 0,
+      duration: 260,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  spawnSuckTrail(fromX, fromY, toX, toY, delay) {
+    const trail = this.add.line(0, 0, fromX, fromY, toX, toY, 0xffffff, 0.58)
+      .setOrigin(0, 0)
+      .setDepth(58);
+    const glow = this.add.line(0, 0, fromX, fromY, toX, toY, 0xf7c94b, 0.34)
+      .setOrigin(0, 0)
+      .setDepth(57);
+    trail.setLineWidth(3, 1);
+    glow.setLineWidth(8, 2);
+    this.tweens.add({
+      targets: [trail, glow],
+      alpha: 0,
+      delay,
+      duration: 360,
+      ease: "Cubic.easeOut",
+      onComplete: () => {
+        trail.destroy();
+        glow.destroy();
+      },
+    });
   }
 
   addCoins(amount) {
@@ -562,17 +655,26 @@ class BubblishTrash extends Phaser.Scene {
         bubble.setSensor(true);
         if (bubble.body?.collisionFilter) bubble.body.collisionFilter.mask = 0;
         bubble.setVelocity(0, 0);
-        this.spawnCoin(bubble.x, bubble.y, index % 4);
+        bubble.setDepth(66);
+        const textureKey = bubble.texture.key;
+        const burstX = mouthX + Phaser.Math.Between(-44, 44);
+        const burstY = mouthY + Phaser.Math.Between(-8, 30);
+        this.spawnSuckTrail(bubble.x, bubble.y, burstX, burstY, index * 12);
         this.tweens.add({
           targets: bubble,
-          x: mouthX,
-          y: mouthY,
-          scaleX: 0.04,
-          scaleY: 0.04,
-          alpha: 0,
-          duration: 380,
-          ease: "Cubic.easeIn",
-          onComplete: () => this.queueBubbleDestroy(bubble),
+          x: burstX,
+          y: burstY,
+          scaleX: bubble.scaleX * 0.2,
+          scaleY: bubble.scaleY * 0.2,
+          angle: bubble.angle + Phaser.Math.Between(360, 760),
+          alpha: 0.88,
+          duration: 330,
+          ease: "Back.easeIn",
+          onComplete: () => {
+            this.spawnHarvesterBurst(burstX, burstY, textureKey);
+            this.spawnCoin(burstX, burstY, index % 5);
+            this.queueBubbleDestroy(bubble);
+          },
         });
       });
     });
@@ -593,7 +695,10 @@ class BubblishTrash extends Phaser.Scene {
       });
     });
     this.addCoins(victims.length * 4);
-    this.time.delayedCall(720, () => this.wakeLooseBubbles());
+    this.time.delayedCall(720, () => {
+      if (victims.length) this.startCollapse({ x: mouthX, y: GAME_H - 140 });
+      else this.wakeLooseBubbles();
+    });
   }
 
   checkDanger() {
