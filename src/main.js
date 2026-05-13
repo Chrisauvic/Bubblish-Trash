@@ -11,6 +11,8 @@ const TYPES = [
   "fishbone",
   "wire",
   "banana",
+  "fries",
+  "tart",
 ];
 const BUBBLE_ASSETS = [
   "bubble-01",
@@ -21,6 +23,8 @@ const BUBBLE_ASSETS = [
   "bubble-06",
   "bubble-07",
   "bubble-08",
+  "bubble-09",
+  "bubble-10",
 ];
 
 class GoofyAudio {
