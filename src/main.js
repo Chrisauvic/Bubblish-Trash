@@ -30,7 +30,6 @@ class GoofyAudio {
     this.timer = null;
     this.step = 0;
     this.lastBumpAt = 0;
-    this.notes = [262, 330, 392, 523, 440, 392, 330, 294, 330, 392, 494, 659, 587, 494, 392, 330];
   }
 
   ensure() {
@@ -44,8 +43,6 @@ class GoofyAudio {
   start() {
     this.ensure();
     if (this.ctx.state === "suspended") this.ctx.resume();
-    if (this.timer) return;
-    this.timer = window.setInterval(() => this.tick(), 118);
   }
 
   blip(freq, duration, type = "square", gain = 0.08, detune = 0) {
@@ -66,11 +63,24 @@ class GoofyAudio {
   }
 
   tick() {
-    const note = this.notes[this.step % this.notes.length];
-    this.blip(note, 0.09, this.step % 4 === 0 ? "triangle" : "square", 0.045, 5);
-    if (this.step % 4 === 0) this.blip(note / 2, 0.14, "triangle", 0.032, -6);
-    if (this.step % 8 === 3) this.blip(note * 1.5, 0.045, "square", 0.026, 45);
     this.step += 1;
+  }
+
+  sweep(fromFreq, toFreq, duration, type = "sine", gain = 0.08) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const amp = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(fromFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(24, toFreq), now + duration);
+    amp.gain.setValueAtTime(0.0001, now);
+    amp.gain.exponentialRampToValueAtTime(gain, now + 0.018);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    osc.connect(amp);
+    amp.connect(this.master);
+    osc.start(now);
+    osc.stop(now + duration + 0.04);
   }
 
   bump() {
@@ -90,15 +100,22 @@ class GoofyAudio {
 
   coin() {
     this.start();
-    this.blip(880, 0.05, "square", 0.07);
-    window.setTimeout(() => this.blip(1175, 0.08, "square", 0.06), 45);
+    this.blip(988, 0.08, "triangle", 0.06, 10);
+    window.setTimeout(() => this.blip(1318, 0.09, "triangle", 0.06, 18), 80);
+    window.setTimeout(() => this.blip(1760, 0.12, "sine", 0.045, 12), 165);
+  }
+
+  harvestStart() {
+    this.start();
+    this.sweep(560, 110, 0.36, "sawtooth", 0.08);
+    window.setTimeout(() => this.blip(92, 0.12, "triangle", 0.08, -40), 170);
   }
 
   harvestBurst() {
     this.start();
-    this.blip(170, 0.045, "sawtooth", 0.07, -120);
-    this.blip(760, 0.05, "square", 0.055, 140);
-    window.setTimeout(() => this.blip(1260, 0.06, "triangle", 0.055, 260), 35);
+    this.sweep(260, 70, 0.16, "sawtooth", 0.055);
+    this.blip(118, 0.09, "triangle", 0.07, -80);
+    window.setTimeout(() => this.blip(740, 0.09, "square", 0.035, 180), 70);
   }
 }
 
@@ -121,6 +138,7 @@ class BubblishTrash extends Phaser.Scene {
     this.load.image("background", "assets/new/background.jpg");
     this.load.image("harvester-mouth", "assets/new/harvester-mouth.png");
     this.load.image("coin", "assets/new/coin.png");
+    this.load.audio("bgm", "assets/audio/upbeat-loop.ogg");
     BUBBLE_ASSETS.forEach((key) => this.load.image(key, `assets/new/${key}.png`));
   }
 
@@ -311,6 +329,11 @@ class BubblishTrash extends Phaser.Scene {
     if (this.started) return;
     this.started = true;
     this.audio.start();
+    if (!this.bgm) {
+      this.bgm = this.sound.add("bgm", { loop: true, volume: 0.42 });
+    }
+    if (!this.bgm.isPlaying) this.bgm.play();
+    this.time.delayedCall(180, () => this.seedBottomPile());
     this.tweens.add({
       targets: this.startLayer,
       alpha: 0,
@@ -339,12 +362,8 @@ class BubblishTrash extends Phaser.Scene {
     this.dropLine.setTo(this.dropX, 30, this.dropX, DROP_Y + 26);
   }
 
-  dropBubble() {
-    if (!this.started || this.gameOver || this.isHarvesting || (this.lastDropAt && this.time.now - this.lastDropAt < 260)) return;
-    this.lastDropAt = this.time.now;
-    const radius = Phaser.Math.Between(30, 48);
-    const type = this.nextType;
-    const bubble = this.matter.add.image(this.dropX, DROP_Y + 28, this.getBubbleTexture(type), null, {
+  makeBubble(x, y, type, radius, options = {}) {
+    const bubble = this.matter.add.image(x, y, this.getBubbleTexture(type), null, {
       restitution: 0.48,
       friction: 0.045,
       frictionStatic: 0.1,
@@ -359,8 +378,43 @@ class BubblishTrash extends Phaser.Scene {
     bubble.setFriction(0.045, 0.014, 0.1);
     bubble.setData("radius", radius);
     bubble.trashType = type;
-    bubble.spawnedAt = this.time.now;
+    bubble.spawnedAt = options.spawnedAt ?? this.time.now;
     this.bubbles.add(bubble);
+    if (options.angle !== undefined) bubble.setAngle(options.angle);
+    if (options.velocity) bubble.setVelocity(options.velocity.x, options.velocity.y);
+    if (options.angularVelocity !== undefined) bubble.setAngularVelocity(options.angularVelocity);
+    return bubble;
+  }
+
+  seedBottomPile() {
+    if (this.seededPile || this.gameOver) return;
+    this.seededPile = true;
+    const count = Phaser.Math.Between(11, 15);
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(i / 6);
+      const col = i % 6;
+      const radius = Phaser.Math.Between(28, 42);
+      const x = 70 + col * 78 + Phaser.Math.Between(-18, 18);
+      const y = GAME_H - 48 - row * 58 + Phaser.Math.Between(-8, 8);
+      const type = Phaser.Math.Between(0, TYPES.length - 1);
+      const bubble = this.makeBubble(x, y, type, radius, {
+        angle: Phaser.Math.Between(-28, 28),
+        spawnedAt: this.time.now - 2000,
+        velocity: { x: Phaser.Math.FloatBetween(-0.35, 0.35), y: Phaser.Math.FloatBetween(-0.5, 0.2) },
+        angularVelocity: Phaser.Math.FloatBetween(-0.02, 0.02),
+      });
+      bubble.setDepth(5 + i);
+      this.pulse(bubble);
+    }
+    this.time.delayedCall(500, () => this.queueClusterCheck());
+  }
+
+  dropBubble() {
+    if (!this.started || this.gameOver || this.isHarvesting || (this.lastDropAt && this.time.now - this.lastDropAt < 260)) return;
+    this.lastDropAt = this.time.now;
+    const radius = Phaser.Math.Between(30, 48);
+    const type = this.nextType;
+    const bubble = this.makeBubble(this.dropX, DROP_Y + 28, type, radius);
     this.pulse(bubble);
 
     this.nextType = Phaser.Math.Between(0, TYPES.length - 1);
@@ -509,37 +563,37 @@ class BubblishTrash extends Phaser.Scene {
   spawnCoin(x, y, delay) {
     const coin = this.add.image(x, y, "coin")
       .setDepth(45)
-      .setDisplaySize(34, 34)
+      .setDisplaySize(52, 52)
       .setAngle(Phaser.Math.Between(-18, 18));
     const coinScale = coin.scaleX;
-    const hopX = x + Phaser.Math.Between(-34, 34);
-    const hopY = y - Phaser.Math.Between(58, 92);
+    const hopX = x + Phaser.Math.Between(-42, 42);
+    const hopY = y - Phaser.Math.Between(82, 128);
     this.tweens.add({
       targets: coin,
-      delay: delay * 35,
+      delay: delay * 80,
       x: hopX,
       y: hopY,
-      scaleX: coinScale * 1.35,
-      scaleY: coinScale * 1.35,
-      angle: coin.angle + Phaser.Math.Between(120, 220),
-      duration: 180,
+      scaleX: coinScale * 1.62,
+      scaleY: coinScale * 1.62,
+      angle: coin.angle + Phaser.Math.Between(140, 260),
+      duration: 430,
       ease: "Back.easeOut",
       onComplete: () => {
         this.tweens.add({
           targets: coin,
           x: 92,
           y: 36,
-          scaleX: coinScale * 0.42,
-          scaleY: coinScale * 0.42,
-          alpha: 0.18,
-          angle: coin.angle + Phaser.Math.Between(260, 420),
-          duration: 540,
+          scaleX: coinScale * 0.28,
+          scaleY: coinScale * 0.28,
+          alpha: 0.16,
+          angle: coin.angle + Phaser.Math.Between(420, 680),
+          duration: 980,
           ease: "Cubic.easeInOut",
           onComplete: () => coin.destroy(),
         });
       },
     });
-    this.time.delayedCall(delay * 35, () => this.audio.coin());
+    this.time.delayedCall(delay * 80, () => this.audio.coin());
   }
 
   spawnHarvesterBurst(x, y, textureKey) {
@@ -547,8 +601,8 @@ class BubblishTrash extends Phaser.Scene {
     this.cameras.main.shake(90, 0.004);
     this.tweens.add({
       targets: this.harvesterMouth,
-      scale: 0.68,
-      duration: 70,
+      scale: 0.72,
+      duration: 120,
       yoyo: true,
       ease: "Sine.easeOut",
     });
@@ -600,7 +654,7 @@ class BubblishTrash extends Phaser.Scene {
       targets: [trail, glow],
       alpha: 0,
       delay,
-      duration: 360,
+      duration: 780,
       ease: "Cubic.easeOut",
       onComplete: () => {
         trail.destroy();
@@ -626,28 +680,33 @@ class BubblishTrash extends Phaser.Scene {
     this.coins -= 100;
     this.coinText.setText(`金币 ${this.coins}`);
     this.updateHarvester();
-    this.audio.pop();
-    this.cameras.main.shake(500, 0.016);
+    this.audio.harvestStart();
+    this.cameras.main.shake(620, 0.012);
 
     const mouthX = GAME_W / 2;
     const mouthY = 116;
     const victims = [...this.bubbles]
       .filter((b) => b.active && !b.isClearing)
       .sort((a, b) => b.y - a.y)
-      .slice(0, 10);
+      .slice(0, 12);
+    const enterDuration = 680;
+    const suckStart = 560;
+    const suckGap = 95;
+    const suckDuration = 700;
+    const finishDelay = suckStart + victims.length * suckGap + 1180;
 
     this.harvesterMouth.setVisible(true).setAlpha(0).setPosition(mouthX, -230).setScale(0.44);
     this.tweens.add({
       targets: this.harvesterMouth,
       y: mouthY,
       alpha: 1,
-      scale: 0.58,
-      duration: 420,
+      scale: 0.62,
+      duration: enterDuration,
       ease: "Back.easeOut",
     });
 
     victims.forEach((bubble, index) => {
-      this.time.delayedCall(260 + index * 45, () => {
+      this.time.delayedCall(suckStart + index * suckGap, () => {
         if (!bubble.active || bubble.isClearing) return;
         this.bubbles.delete(bubble);
         bubble.isClearing = true;
@@ -666,9 +725,9 @@ class BubblishTrash extends Phaser.Scene {
           y: burstY,
           scaleX: bubble.scaleX * 0.2,
           scaleY: bubble.scaleY * 0.2,
-          angle: bubble.angle + Phaser.Math.Between(360, 760),
+          angle: bubble.angle + Phaser.Math.Between(520, 980),
           alpha: 0.88,
-          duration: 330,
+          duration: suckDuration,
           ease: "Back.easeIn",
           onComplete: () => {
             this.spawnHarvesterBurst(burstX, burstY, textureKey);
@@ -679,13 +738,13 @@ class BubblishTrash extends Phaser.Scene {
       });
     });
 
-    this.time.delayedCall(1120, () => {
+    this.time.delayedCall(finishDelay, () => {
       this.tweens.add({
         targets: this.harvesterMouth,
         y: -250,
         alpha: 0,
         scale: 0.44,
-        duration: 360,
+        duration: 560,
         ease: "Cubic.easeIn",
         onComplete: () => {
           this.harvesterMouth.setVisible(false);
@@ -694,8 +753,8 @@ class BubblishTrash extends Phaser.Scene {
         },
       });
     });
-    this.addCoins(victims.length * 4);
-    this.time.delayedCall(720, () => {
+    this.addCoins(victims.length * 6);
+    this.time.delayedCall(finishDelay - 360, () => {
       if (victims.length) this.startCollapse({ x: mouthX, y: GAME_H - 140 });
       else this.wakeLooseBubbles();
     });
